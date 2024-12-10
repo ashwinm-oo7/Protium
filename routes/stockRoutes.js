@@ -1,9 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { addStock } = require("../controllers/stockController");
+const { addStock, getStockDetails } = require("../controllers/stockController");
 
 // Add stock
 router.post("/add", addStock);
+
+router.get("/:symbol", getStockDetails);
 
 // Example GET route for stocks
 router.get("/", async (req, res) => {

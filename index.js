@@ -15,6 +15,7 @@ const PORT = process.env.BACKEND_PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+require("./utils/cronJobs"); // This ensures the cron job is triggered
 // Ensure environment variables are loaded correctly
 const requiredEnvVars = [
   "MONGO_USERNAME",

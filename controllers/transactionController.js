@@ -74,10 +74,14 @@ const recordSellTransaction = async (req, res) => {
     let portfolio = await Portfolio.findOne({ userId }).populate(
       "stocks.stockId"
     );
+    if (!portfolio) {
+      return res.status(404).json({ message: "Portfolio not found" });
+    }
+
     const existingStock = portfolio.stocks.find(
-      (item) => item.stockId.toString() === stockId
+      (item) => item.stockId._id.toString() === stockId
     );
-    console.log(portfolio, "", stockId);
+    console.log(portfolio, "", stockId, "", existingStock);
     if (!existingStock) {
       return res.status(400).json({ message: "No stock is there" });
     }
