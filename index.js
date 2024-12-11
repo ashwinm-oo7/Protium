@@ -3,6 +3,7 @@ const dotenv = require("dotenv");
 const mongoose = require("mongoose");
 const cors = require("cors");
 dotenv.config();
+const errorHandler = require("./middleware/errorHandler");
 
 const stockRoutes = require("./routes/stockRoutes");
 const portfolioRoutes = require("./routes/portfolioRoutes");
@@ -39,8 +40,6 @@ const uri = `mongodb+srv://${username}:${encodeURIComponent(password)}@${
   process.env.MONGO_URI
 }/${dbName}?retryWrites=true&w=majority`;
 
-console.log("MongoDB URI:", uri); // Check the final URI in the console
-
 // Connect to MongoDB
 mongoose
   .connect(uri)
@@ -52,6 +51,8 @@ app.use("/api/stocks", stockRoutes);
 app.use("/api/portfolio", portfolioRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
+app.use(errorHandler);
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

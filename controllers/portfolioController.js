@@ -1,11 +1,20 @@
 const Portfolio = require("../models/Portfolio");
 const Stock = require("../models/Stock");
 const User = require("../models/User"); // Import User model
+const mongoose = require("mongoose");
 
 // Add stock to portfolio
 const addStockToPortfolio = async (req, res) => {
   try {
     const { userId, stockId, quantity } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(stockId)) {
+      return res.status(400).json({ message: "Invalid Stock ID" });
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -90,6 +99,9 @@ const getPortfolioHoldings = async (req, res) => {
 const getPortfolioValue = async (req, res) => {
   try {
     const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
 
     const portfolio = await Portfolio.findOne({ userId }).populate(
       "stocks.stockId"
@@ -114,6 +126,26 @@ const trackStockPerformance = async (req, res) => {
   try {
     const { userId, stockId } = req.params;
 
+    // Validate User ID and Stock ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(stockId)) {
+      return res.status(400).json({ message: "Invalid Stock ID" });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if stock exists
+    const stock = await Stock.findById(stockId);
+    if (!stock) {
+      return res.status(404).json({ message: "Stock not found" });
+    }
+
     // Fetch the user's portfolio
     const portfolio = await Portfolio.findOne({ userId }).populate(
       "stocks.stockId"
@@ -123,30 +155,47 @@ const trackStockPerformance = async (req, res) => {
       return res.status(404).json({ message: "Portfolio not found" });
     }
 
-    // Find the specific stock in the portfolio
-    const stockData = portfolio.stocks.find(
+    // Find all purchases for the specific stock
+    const stockData = portfolio.stocks.filter(
       (stock) => stock.stockId._id.toString() === stockId
     );
 
-    if (!stockData) {
+    if (stockData.length === 0) {
       return res.status(404).json({ message: "Stock not found in portfolio" });
     }
 
-    // Calculate performance metrics
-    const currentValue = stockData.quantity * stockData.stockId.currentPrice;
-    const purchaseValue = stockData.quantity * stockData.purchasePrice;
-    const performance = currentValue - purchaseValue;
+    // Calculate performance metrics for multiple purchases
+    let totalQuantity = 0;
+    let totalPurchaseValue = 0;
+    stockData.forEach((purchase) => {
+      totalQuantity += purchase.quantity;
+      totalPurchaseValue += purchase.quantity * purchase.purchasePrice;
+    });
+
+    const currentValue = totalQuantity * stock.currentPrice;
+    const performance = currentValue - totalPurchaseValue;
+
+    // Update stock price history
+    const today = new Date().toISOString().split("T")[0];
+    const priceHistoryEntry = stock.priceHistory.find(
+      (entry) => entry.date.toISOString().split("T")[0] === today
+    );
+
+    if (!priceHistoryEntry) {
+      stock.priceHistory.push({ date: new Date(), price: stock.currentPrice });
+      await stock.save();
+    }
 
     // Return stock performance details
     res.status(200).json({
       stock: {
-        symbol: stockData.stockId.symbol,
-        name: stockData.stockId.name,
-        quantity: stockData.quantity,
-        currentPrice: stockData.stockId.currentPrice,
-        purchasePrice: stockData.purchasePrice,
+        symbol: stock.symbol,
+        name: stock.name,
+        totalQuantity,
+        currentPrice: stock.currentPrice,
+        averagePurchasePrice: totalPurchaseValue / totalQuantity,
         currentValue,
-        purchaseValue,
+        totalPurchaseValue,
         performance,
       },
     });

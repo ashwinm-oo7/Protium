@@ -2,11 +2,20 @@ const Transaction = require("../models/Transaction");
 const Stock = require("../models/Stock");
 const Portfolio = require("../models/Portfolio");
 const User = require("../models/User"); // Import User model
+const mongoose = require("mongoose");
 
 // Record buy transaction
 const recordBuyTransaction = async (req, res) => {
   try {
     const { userId, stockId, quantity } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(stockId)) {
+      return res.status(400).json({ message: "Invalid Stock ID" });
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -64,6 +73,13 @@ const recordBuyTransaction = async (req, res) => {
 const recordSellTransaction = async (req, res) => {
   try {
     const { userId, stockId, quantity } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(stockId)) {
+      return res.status(400).json({ message: "Invalid Stock ID" });
+    }
 
     const stock = await Stock.findById(stockId);
     if (!stock) {
@@ -81,21 +97,24 @@ const recordSellTransaction = async (req, res) => {
     const existingStock = portfolio.stocks.find(
       (item) => item.stockId._id.toString() === stockId
     );
-    console.log(portfolio, "", stockId, "", existingStock);
+
     if (!existingStock) {
-      return res.status(400).json({ message: "No stock is there" });
+      return res.status(400).json({ message: "No stock found in portfolio" });
     }
 
-    if (!existingStock || existingStock.quantity < quantity) {
+    if (existingStock.quantity < quantity) {
       return res.status(400).json({ message: "Not enough stock to sell" });
     }
-
+    const purchaseValue = existingStock.quantity * existingStock.purchasePrice;
+    const saleValue = quantity * stock.currentPrice;
+    const profitLoss = saleValue - quantity * existingStock.purchasePrice;
     // Record the sell transaction
     const transaction = new Transaction({
       userId,
       stockId,
       type: "sell",
       quantity,
+      profitLoss,
       price: stock.currentPrice,
     });
 
@@ -105,10 +124,23 @@ const recordSellTransaction = async (req, res) => {
     // Update the user's portfolio
     existingStock.quantity -= quantity;
     if (existingStock.quantity === 0) {
-      portfolio.stocks.pull(existingStock._id);
+      await Portfolio.findOneAndUpdate(
+        { userId },
+        {
+          $pull: { stocks: { stockId: new mongoose.Types.ObjectId(stockId) } },
+        },
+        { new: true }
+      );
+    } else {
+      // Otherwise, update the stock's quantity in the portfolio
+      await Portfolio.findOneAndUpdate(
+        { userId, "stocks.stockId": new mongoose.Types.ObjectId(stockId) },
+        { $set: { "stocks.$.quantity": existingStock.quantity } },
+        { new: true }
+      );
     }
 
-    await portfolio.save();
+    // await portfolio.save();
     res
       .status(201)
       .json({ message: "Stock sold and transaction recorded", transaction });
@@ -121,12 +153,42 @@ const recordSellTransaction = async (req, res) => {
 };
 
 // Get transaction history for a user
+// Get transaction history for a user with aggregated data
 const getTransactionHistory = async (req, res) => {
   try {
     const { userId } = req.params;
+    const { stockId, startDate, endDate, transactionType } = req.query;
 
-    // Fetch all transactions for a given user, sorted by most recent first
-    const transactions = await Transaction.find({ userId })
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const filters = { userId };
+
+    // If stockId is provided, add to filters
+    if (stockId && mongoose.Types.ObjectId.isValid(stockId)) {
+      filters.stockId = new mongoose.Types.ObjectId(stockId);
+    }
+
+    // If startDate and endDate are provided, add them to filters
+    if (startDate && endDate) {
+      filters.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    }
+
+    // If transactionType is provided, filter by type (buy or sell)
+    if (
+      transactionType &&
+      (transactionType === "buy" || transactionType === "sell")
+    ) {
+      filters.type = transactionType;
+    }
+
+    // Fetch transactions based on filters
+    const transactions = await Transaction.find(filters)
       .populate("stockId")
       .sort({ date: -1 });
 
@@ -136,7 +198,30 @@ const getTransactionHistory = async (req, res) => {
         .json({ message: "No transactions found for this user" });
     }
 
-    res.status(200).json(transactions);
+    // Calculate aggregated data (buy/sell value, net gains)
+    let totalBuyValue = 0;
+    let totalSellValue = 0;
+    let netGain = 0;
+
+    transactions.forEach((transaction) => {
+      const transactionValue = transaction.quantity * transaction.price;
+      if (transaction.type === "buy") {
+        totalBuyValue += transactionValue;
+      } else if (transaction.type === "sell") {
+        totalSellValue += transactionValue;
+      }
+    });
+
+    netGain = totalSellValue - totalBuyValue;
+
+    res.status(200).json({
+      transactions,
+      aggregatedData: {
+        totalBuyValue,
+        totalSellValue,
+        netGain,
+      },
+    });
   } catch (error) {
     console.error(error);
     res

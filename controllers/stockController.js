@@ -1,4 +1,10 @@
+const { query } = require("express");
 const Stock = require("../models/Stock");
+const { getCache, setCache } = require("../utils/cache");
+const axios = require("axios");
+const dotenv = require("dotenv");
+dotenv.config();
+const API_KEY = process.env.API_KEY;
 
 const addStock = async (req, res) => {
   try {
@@ -20,17 +26,37 @@ const addStock = async (req, res) => {
 
 const getStockDetails = async (req, res) => {
   try {
-    const { symbol } = req.params;
-    const stock = await Stock.findOne({ symbol });
+    const { symbol, stockId } = req.params;
+    let query = {};
+
+    // Build query based on provided params
+    if (symbol) {
+      query.symbol = symbol;
+    }
+    if (stockId) {
+      query._id = stockId;
+    }
+
+    // Fetch stock details based on the query
+    const stock = await Stock.findOne(query);
     if (!stock) {
       return res.status(404).json({ error: "Stock not found" });
     }
-    // Return stock information including the daily change
+
+    // Calculate daily change
+    const dailyChange =
+      stock.priceHistory.length > 1
+        ? stock.currentPrice -
+          stock.priceHistory[stock.priceHistory.length - 2].price
+        : 0; // If no previous price, daily change is 0
+
+    // Return stock information including daily change and price history
     res.json({
       symbol: stock.symbol,
       name: stock.name,
       currentPrice: stock.currentPrice,
-      dailyChange: stock.dailyChange,
+      dailyChange,
+      priceHistory: stock.priceHistory,
     });
   } catch (error) {
     console.error(error);
@@ -52,27 +78,83 @@ const getStockPrice = async (req, res) => {
   }
 };
 
-const axios = require("axios");
-const dotenv = require("dotenv");
-dotenv.config();
-
-const API_KEY = process.env.API_KEY;
-
-const getStockPriceLive = async (symbol) => {
-  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=5min&apikey=${API_KEY}`;
-
+const updateStockPrice = async (req, res) => {
   try {
-    const response = await axios.get(url);
-    const stockData = response.data["Time Series (5min)"]; // Access the time series data
-    const latestTime = Object.keys(stockData)[0]; // Get the latest time
-    const latestData = stockData[latestTime]; // Get the data for that time
-    const currentPrice = latestData["4. close"]; // Extract the current price
+    const { symbol, newPrice } = req.body;
+    if (!symbol || !newPrice) {
+      return res.status(404).json({ error: "Invalid Input" });
+    }
+    const stock = await Stock.findOne({ symbol });
+    if (!stock) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
 
-    console.log(`Current price of ${symbol}: $${currentPrice}`);
-    return currentPrice;
+    // Update price history only if the price has changed
+    const today = new Date().toISOString().split("T")[0];
+    const lastHistoryEntry = stock.priceHistory.at(-1);
+
+    if (
+      !lastHistoryEntry ||
+      lastHistoryEntry.date.toISOString().split("T")[0] !== today
+    ) {
+      stock.priceHistory.push({ date: new Date(), price: newPrice });
+    }
+
+    stock.currentPrice = newPrice;
+    await stock.save();
+
+    res.status(200).json({ message: "Stock price updated", stock });
   } catch (error) {
-    console.error("Error fetching stock data:", error);
+    console.error(error);
+    res.status(500).json({ error: "Error updating stock price" });
   }
 };
 
-module.exports = { addStock, getStockPrice, getStockDetails };
+const getLiveStockPrice = async (req, res, next) => {
+  const { symbol } = req.params;
+
+  try {
+    const cachedPrice = getCache(symbol);
+    if (cachedPrice) {
+      return res.status(200).json({ symbol, price: cachedPrice });
+    }
+
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=5min&apikey=${process.env.API_KEY}`;
+    const response = await axios.get(url);
+
+    const stockData = response.data["Time Series (5min)"];
+    const latestTime = Object.keys(stockData)[0];
+    const currentPrice = stockData[latestTime]["4. close"];
+
+    // Update the stock price in the database
+    const stock = await Stock.findOne({ symbol });
+    if (stock) {
+      const today = new Date().toISOString().split("T")[0];
+      const lastHistoryEntry = stock.priceHistory.at(-1);
+
+      // Add a new entry to priceHistory if the date is different or price has changed
+      if (
+        !lastHistoryEntry ||
+        lastHistoryEntry.date.toISOString().split("T")[0] !== today
+      ) {
+        stock.priceHistory.push({ date: new Date(), price: currentPrice });
+      }
+
+      stock.currentPrice = currentPrice;
+      await stock.save();
+    }
+
+    setCache(symbol, currentPrice);
+    res.status(200).json({ symbol, price: currentPrice });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  addStock,
+  getStockPrice,
+  getStockDetails,
+  getLiveStockPrice,
+  updateStockPrice,
+};
