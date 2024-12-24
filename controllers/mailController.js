@@ -1,10 +1,11 @@
 const transporter = require("../config/nodemailerConfig");
-const client = require("../config/redisClient");
 const User = require("../models/User");
+
+let otpStore = {}; // This will temporarily store OTPs in memory
 
 exports.generateOtp = () => ({
   otp: Math.floor(100000 + Math.random() * 900000),
-  expiresAt: Date.now() + 5 * 60 * 200, // Current time + 5 minutes
+  expiresAt: Date.now() + 5 * 60 * 1000, // Current time + 5 minutes
 });
 
 exports.sendOtp = async (req, res) => {
@@ -14,14 +15,12 @@ exports.sendOtp = async (req, res) => {
 
     if (email) {
       userEmail = email;
-      // Validate email and send OTP
     } else if (mobile) {
       const user = await User.findOne({ mobile });
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
       userEmail = user.email;
-      // Validate mobile and send OTP
     } else {
       return res.status(400).json({ success: false, message: "Invalid input" });
     }
@@ -29,21 +28,16 @@ exports.sendOtp = async (req, res) => {
     let subject = "";
     if (reset) {
       if (!(await User.findOne({ email: userEmail }))) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Email doesn't exist." });
+        return res.status(400).json({ success: false, message: "Email doesn't exist." });
       }
     } else {
       if (await User.findOne({ email: userEmail })) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Email already exists." });
+        return res.status(400).json({ success: false, message: "Email already exists." });
       }
     }
+
     if (!email && !mobile) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Email required." });
+      return res.status(400).json({ success: false, message: "Email required." });
     }
 
     if (reset) {
@@ -51,14 +45,11 @@ exports.sendOtp = async (req, res) => {
     } else {
       subject = "M-Stock Verify Your Email OTP Code";
     }
+
     const otpData = this.generateOtp();
 
-    // Send email
-    if (!client.isOpen) {
-      await client.connect();
-    }
-
-    await client.setEx(`otp:${userEmail}`, 300, JSON.stringify(otpData));
+    // Store OTP in memory
+    otpStore[userEmail] = otpData;
 
     // Simulate sending OTP (log it for now)
     console.log(`OTP for ${userEmail}: ${otpData.otp}`);
@@ -72,9 +63,7 @@ exports.sendOtp = async (req, res) => {
 
     transporter.sendMail(mailOptions, (err, info) => {
       if (err) {
-        return res
-          .status(500)
-          .json({ success: false, message: "Failed to send OTP.", error: err });
+        return res.status(500).json({ success: false, message: "Failed to send OTP.", error: err });
       }
       res.status(200).json({
         success: true,
