@@ -4,7 +4,7 @@ const path = require("path");
 
 // Create the 'uploads' directory if it doesn't exist
 const uploadDir = path.join(
-  "C:/Users/Ashwin/Downloads/Upgrad Stock and Adharcard/stockImage"
+  "stockImage"
 );
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true }); // Ensures the full directory path is created
