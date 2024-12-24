@@ -301,7 +301,7 @@ exports.updateUserDetails = async (req, res) => {
   }
 };
 
-exports.uploadProfilePic = async (req, res) => {
+exports.updateProfilePic = async (req, res) => {
   try {
     const { userId } = req.params;
     const user = await User.findById(userId);
