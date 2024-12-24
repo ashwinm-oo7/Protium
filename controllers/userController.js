@@ -9,7 +9,6 @@ const path = require("path");
 const upload = require("../utils/FileUpload");
 const dotenv = require("dotenv");
 dotenv.config();
-// const otpGenerator = require("otp-generator");
 
 const { check, validationResult } = require("express-validator");
 const transporter = require("../config/nodemailerConfig");
@@ -41,8 +40,6 @@ exports.registerUser = async (req, res) => {
     if (newUsers) {
       return res.status(409).json({ message: "Email is already registered" });
     }
-
-    // Verify OTP logic here if needed for registration (using OTP generation outside Redis)
 
     if (!validatePassword(password)) {
       return res.status(400).json({
@@ -82,10 +79,6 @@ exports.loginUser = async (req, res) => {
     // Validate OTP for login if necessary
     if (otp) {
       console.log("Submitted OTP:", otp);
-
-      // OTP validation logic here, ensuring it's correct and hasn't expired
-
-      // Issue JWT token
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -164,8 +157,6 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Verify OTP logic here (if necessary)
-
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({
@@ -198,7 +189,6 @@ exports.changePassword = async (req, res) => {
 exports.validateEmail = async (req, res) => {
   try {
     const { email } = req.body;
-    console.log("Email Checking ", email);
     if (!email) {
       return res
         .status(400)
@@ -243,10 +233,8 @@ exports.validateEmail = async (req, res) => {
 exports.getUserProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(id);
     if (!id) {
-      console.log("user not found");
-      return;
+      return res.status(404).json({ message: "User not found" });
     }
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid User ID" });
@@ -285,6 +273,7 @@ exports.updateUserDetails = async (req, res) => {
   try {
     const { userId } = req.params; // Get the userId from the route parameter
     const { name, username } = req.body;
+
     const usernames = await User.findOne({ username });
     if (usernames) {
       return res.status(404).json({ message: "username exist!!!" });
@@ -344,5 +333,81 @@ exports.uploadProfilePic = async (req, res) => {
   } catch (error) {
     console.error("Error uploading profile picture:", error.message);
     res.status(500).json({ message: "Error uploading profile picture", error: error.message });
+  }
+};
+
+const saveBase64Image = async (base64Image) => {
+  try {
+    const base64Data = base64Image.split(";base64,").pop(); // Extract base64 content
+    const uploadDir = path.join(
+      "C:/Users/Ashwin/Downloads/Upgrad Stock and Adharcard/stockImage"
+    );
+
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const filePath = path.join(uploadDir, `profile-${Date.now()}.png`);
+    fs.writeFileSync(filePath, base64Data, { encoding: "base64" });
+    return filePath;
+  } catch (error) {
+    console.error("Error saving base64 image:", error);
+    throw new Error("Failed to save base64 image.");
+  }
+};
+
+exports.validatePasswordChange = [
+  check("oldPassword").notEmpty().withMessage("Old password is required."),
+  check("newPassword")
+    .isLength({ min: 6 })
+    .withMessage("New password must be at least 6 characters."),
+];
+
+exports.oldPasswordChanged = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  const { oldPassword, newPassword } = req.body;
+
+  try {
+    const userId = req.params.id;
+
+    // Fetch user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found." });
+    }
+
+    // Compare old password
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Old password is incorrect.",
+      });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password in database
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password updated successfully.",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "An error occurred while updating the password.",
+    });
   }
 };
