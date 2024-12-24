@@ -1,5 +1,6 @@
 const Portfolio = require("../models/Portfolio");
 const Stock = require("../models/Stock");
+const Transaction = require("../models/Transaction");
 const User = require("../models/User"); // Import User model
 const mongoose = require("mongoose");
 
@@ -43,7 +44,16 @@ const addStockToPortfolio = async (req, res) => {
         purchasePrice: stock.currentPrice,
       });
     }
+    const transaction = new Transaction({
+      userId,
+      stockId,
+      type: "buy",
+      quantity,
+      price: purchasePrice,
+      date: new Date(),
+    });
 
+    await transaction.save();
     await portfolio.save();
     res.status(201).json({ message: "Stock added successfully", portfolio });
   } catch (error) {
@@ -56,10 +66,18 @@ const addStockToPortfolio = async (req, res) => {
 const getPortfolioHoldings = async (req, res) => {
   try {
     const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid User ID" });
+    }
 
-    const portfolio = await Portfolio.findOne({ userId }).populate(
-      "stocks.stockId"
-    );
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const portfolio = await Portfolio.findOne({ userId })
+      .populate("stocks.stockId")
+      .lean();
     if (!portfolio) {
       return res.status(404).json({ message: "Portfolio not found" });
     }
@@ -69,7 +87,7 @@ const getPortfolioHoldings = async (req, res) => {
     const holdings = portfolio.stocks.map((stock) => {
       const currentValue = stock.quantity * stock.stockId.currentPrice;
       totalValue += currentValue;
-
+      const purchaseValue = stock.purchasePrice * stock.quantity;
       return {
         stockId: stock.stockId._id,
         symbol: stock.stockId.symbol,
@@ -78,7 +96,7 @@ const getPortfolioHoldings = async (req, res) => {
         purchasePrice: stock.purchasePrice,
         currentPrice: stock.stockId.currentPrice,
         currentValue,
-        profitLoss: currentValue - stock.quantity * stock.purchasePrice,
+        profitLoss: currentValue - purchaseValue,
       };
     });
 

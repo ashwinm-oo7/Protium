@@ -1,7 +1,10 @@
-// utils/cache.js
 const NodeCache = require("node-cache");
-const cache = new NodeCache({ stdTTL: 300 }); // Cache for 5 minutes
+const cache = new NodeCache({ stdTTL: 3000 }); // Cache for 5 minutes
 
-exports.getCache = (key) => cache.get(key);
+const getCache = (key) => cache.get(key);
 
-exports.setCache = (key, value) => cache.set(key, value);
+const setCache = (key, value) => {
+  cache.set(key, value);
+  console.log(`Cache set for ${key}: ${value}`);
+};
+module.exports = { setCache, getCache };

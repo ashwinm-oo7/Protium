@@ -8,8 +8,12 @@ const stockSchema = new mongoose.Schema(
     dailyChange: { type: Number, default: 0 },
     priceHistory: [
       {
-        date: { type: Date, default: Date.now },
-        price: { type: Number, required: true },
+        date: { type: Date },
+        open: { type: Number },
+        high: { type: Number },
+        low: { type: Number },
+        close: { type: Number },
+        volume: { type: Number },
       },
     ],
     dateAdded: { type: Date, default: Date.now },

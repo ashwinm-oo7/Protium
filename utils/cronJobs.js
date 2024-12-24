@@ -6,13 +6,14 @@ const Stock = require("../models/Stock"); // Assuming you have a Stock model
 
 const API_KEY = process.env.API_KEY;
 
-// cron.schedule("0 * * * *", async () => {....for every hour
 cron.schedule("0 * * * *", async () => {
-  //for every minute
+  //.for every hour
+  // cron.schedule("*/15 * * * *", async () => {
+  //for every 15minute
   console.log("Updating stock prices...");
 
   // Runs every hour at the 0th minute
-  const stockSymbols = ["AAPL"]; // List of stock symbols to update
+  const stockSymbols = ["AAPL", "GOOGL", "NFLX", "IBM"]; // List of stock symbols to update
 
   for (const symbol of stockSymbols) {
     try {

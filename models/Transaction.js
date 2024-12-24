@@ -15,7 +15,7 @@ const transactionSchema = new mongoose.Schema(
     type: { type: String, enum: ["buy", "sell"], required: true },
     quantity: { type: Number, required: true },
     price: { type: Number, required: true },
-    profitLoss: { type: Number, required: true },
+    profitLoss: { type: Number },
     date: { type: Date, default: Date.now },
   },
   { versionKey: false }

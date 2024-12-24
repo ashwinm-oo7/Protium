@@ -4,24 +4,19 @@ const {
   addStock,
   getStockDetails,
   updateStockPrice,
+  getLiveStockPrice,
+  getAllStockDetails,
 } = require("../controllers/stockController");
 
+router.get("/getAllStockDetails", getAllStockDetails);
 // Add stock
+
 router.post("/add", addStock);
 
-router.get("/:symbol", getStockDetails);
+router.get("/stock-detail/:stockId", getStockDetails);
 
 router.post("/update", updateStockPrice);
 // Example GET route for stocks
-router.get("/", async (req, res) => {
-  try {
-    const db = await (await require("../config/db").connectDatabase()).getDb();
-    const stocksCollection = db.collection("stocks");
-    const stocks = await stocksCollection.find().toArray();
-    res.status(200).json(stocks);
-  } catch (error) {
-    res.status(500).json({ message: "Error fetching stocks data", error });
-  }
-});
+router.get("/getLiveStockPrice/:symbol", getLiveStockPrice);
 
 module.exports = router;

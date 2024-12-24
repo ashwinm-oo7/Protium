@@ -9,6 +9,9 @@ const stockRoutes = require("./routes/stockRoutes");
 const portfolioRoutes = require("./routes/portfolioRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const userRoutes = require("./routes/userRoutes");
+const protectedRoutes = require("./routes/protectedRoutes");
+const yahooRoutes = require("./controllers/yahooFinance");
+const razorpayRoutes = require("./routes/RazorpayRoutes");
 const app = express();
 const PORT = process.env.BACKEND_PORT || 4000;
 
@@ -47,10 +50,16 @@ mongoose
   .catch((err) => console.error("MongoDB connection failed:", err));
 
 // Use routes
+
+// Add protected route to the main server
+app.use("/api/protected", protectedRoutes);
+
 app.use("/api/stocks", stockRoutes);
 app.use("/api/portfolio", portfolioRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/yahoo", yahooRoutes);
+app.use("/api/razorpay", razorpayRoutes);
 app.use(errorHandler);
 
 // Start the server
