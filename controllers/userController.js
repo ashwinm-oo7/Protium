@@ -302,45 +302,73 @@ exports.updateUserDetails = async (req, res) => {
 };
 
 exports.updateProfilePic = async (req, res) => {
+  const { id } = req.params;
+  const { base64Image } = req.body;
+
   try {
-    const { userId } = req.params;
-    const user = await User.findById(userId);
+    // Fetch user by ID
+    const user = await User.findById(id);
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
-    // Ensure file is selected
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
+    let savedFilePath = null;
 
-    const fileExtension = path.extname(req.file.originalname);
-    const isValidImage =
-      allowedImageFormats.includes(req.file.mimetype) || allowedVideoFormats.includes(req.file.mimetype);
-    if (!isValidImage) {
+    if (req.file) {
+      // Handle multer file upload
+      savedFilePath = req.file.path;
+      user.profilePic = savedFilePath;
+      user.base64Data = null; // Clear previous base64 data
+    } else if (base64Image) {
+      // Validate and save base64 image
+      if (Buffer.byteLength(base64Image, "base64") > 10 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          message: "Base64 image size exceeds the limit of 5MB.",
+        });
+      }
+
+      savedFilePath = await saveBase64Image(base64Image);
+      user.profilePic = savedFilePath;
+      user.base64Data = null; // Clear previous base64 data
+    } else {
       return res.status(400).json({
-        message: "Invalid file format. Only image or video files are allowed.",
+        success: false,
+        message: "No file or base64 image provided.",
       });
     }
 
-    const profilePicPath = `./uploads/${userId}_${Date.now()}${fileExtension}`;
-    fs.writeFileSync(profilePicPath, req.file.buffer);
-    user.profilePic = profilePicPath;
+    await user.save(); // Save updated user data
 
-    await user.save();
-    const { password, ...userDetails } = user.toObject();
-    res.status(200).json({ message: "Profile picture uploaded successfully", user: userDetails });
+    return res.status(200).json({
+      success: true,
+      message: "Profile picture updated successfully",
+      profilePic: user.profilePic,
+    });
   } catch (error) {
-    console.error("Error uploading profile picture:", error.message);
-    res.status(500).json({ message: "Error uploading profile picture", error: error.message });
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        message: `Multer error: ${error.message}`,
+      });
+    } else {
+      console.error(`Error updating profile picture for user ${id}:`, error);
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while updating the profile picture.",
+      });
+    }
   }
 };
+
 
 const saveBase64Image = async (base64Image) => {
   try {
     const base64Data = base64Image.split(";base64,").pop(); // Extract base64 content
     const uploadDir = path.join(
-      "C:/Users/Ashwin/Downloads/Upgrad Stock and Adharcard/stockImage"
+      "stockImage"
     );
 
     // Create directory if it doesn't exist
