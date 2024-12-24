@@ -5,7 +5,7 @@ const client = redis.createClient({
   url: "rediss://red-ctlf2ohopnds73f9s7eg:VMqkkg27IRPgnoInkRdpgZyL0L0Qij2P@oregon-redis.render.com:6379",
 });
 
-client.on("error", (err) => console.error("Redis Client Error:", err));
+client.on("error", (err) => console.error("Redis Client Error rediss://red-ctlf2ohopnds73f9s7eg:VMqkkg27IRPgnoInkRdpgZyL0L0Qij2P@oregon-redis.render.com:6379:", err));
 
 (async () => {
   try {
