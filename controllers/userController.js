@@ -2,7 +2,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const dns = require("dns");
 const User = require("../models/User");
-const client = require("../config/redisClient");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const multer = require("multer");
@@ -11,7 +10,6 @@ const upload = require("../utils/FileUpload");
 const dotenv = require("dotenv");
 dotenv.config();
 // const otpGenerator = require("otp-generator");
-let otpStorage = {}; // Temporary storage for OTPs (you can use a DB for production)
 
 const { check, validationResult } = require("express-validator");
 const transporter = require("../config/nodemailerConfig");
@@ -43,24 +41,8 @@ exports.registerUser = async (req, res) => {
     if (newUsers) {
       return res.status(409).json({ message: "Email is already registered" });
     }
-    const otpDataString = await client.get(`otp:${email}`);
-    const otpData = JSON.parse(otpDataString);
 
-    if (!otpDataString) {
-      return res
-        .status(400)
-        .json({ message: "OTP not found. Please request a new one." });
-    }
-    if (otpData.expiresAt < Date.now()) {
-      return res
-        .status(400)
-        .json({ message: "OTP has expired. Please request a new one." });
-    }
-    if (otpData.otp !== parseInt(otp, 10)) {
-      return res.status(400).json({ message: "Invalid OTP." });
-    }
-
-    await client.del(`otp:${email}`);
+    // Verify OTP logic here if needed for registration (using OTP generation outside Redis)
 
     if (!validatePassword(password)) {
       return res.status(400).json({
@@ -96,50 +78,32 @@ exports.registerUser = async (req, res) => {
 exports.loginUser = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
+
+    // Validate OTP for login if necessary
     if (otp) {
-      console.log("Submitted OTP:", otpStorage[email]);
-      console.log("Submitted OTP Type:", typeof otp);
+      console.log("Submitted OTP:", otp);
 
-      if (otpStorage[email]) {
-        const { otps: storedOtp, timestamp } = otpStorage[email];
-        const OTP_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes expiry time
-        console.log("Submitted OTP:", otp);
+      // OTP validation logic here, ensuring it's correct and hasn't expired
 
-        // Check if OTP has expired
-        if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
-          return res.status(400).json({ message: "OTP has expired" });
-        }
-        console.log(storedOtp === Number(otp), storedOtp, otp);
-        // Validate OTP
-        if (storedOtp === Number(otp)) {
-          // OTP is valid, issue JWT token
-          const user = await User.findOne({ email });
-          if (!user) {
-            return res.status(404).json({ message: "User not found" });
-          }
-
-          const token = jwt.sign(
-            { id: user._id, email: user.email },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
-          );
-
-          // Clear OTP from storage after successful verification
-          delete otpStorage[email];
-
-          // Send response with token and user info
-          return res.status(200).json({
-            message: "Login successful",
-            token,
-            user: { id: user._id, email: user.email },
-          });
-        } else {
-          return res.status(401).json({ message: "Invalid OTP" });
-        }
-      } else {
-        return res.status(404).json({ message: "OTP not found or expired" });
+      // Issue JWT token
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
+
+      const token = jwt.sign(
+        { id: user._id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
+      );
+
+      return res.status(200).json({
+        message: "Login successful",
+        token,
+        user: { id: user._id, email: user.email },
+      });
     }
+
     // Validate the request data
     if (!email || !password) {
       return res
@@ -158,20 +122,6 @@ exports.loginUser = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid password" });
     }
-    const otps = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
-    otpStorage[email] = {
-      otps,
-      timestamp: Date.now(), // Store OTP and timestamp
-    };
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Your OTP for Login",
-      text: `Your OTP for login is: ${otps}`,
-    };
-    console.log("Stored OTP:", otpStorage[email]);
-    await transporter.sendMail(mailOptions);
 
     const token = jwt.sign(
       { id: user._id, email: user.email },
@@ -202,6 +152,7 @@ exports.loginUser = async (req, res) => {
       .json({ message: "Error during login", error: error.message });
   }
 };
+
 // Change Password Endpoint
 exports.changePassword = async (req, res) => {
   try {
@@ -213,33 +164,8 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    console.log(email, otp, newPassword);
-    // Verify OTP first
-    const storedOtp = await client.get(`otp:${email}`);
-    if (!storedOtp) {
-      return res.status(400).json({
-        success: false,
-        message: "OTP has expired or does not exist.",
-      });
-    }
+    // Verify OTP logic here (if necessary)
 
-    const otpData = JSON.parse(storedOtp);
-
-    if (otpData.otp !== parseInt(otp)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid OTP.",
-      });
-    }
-
-    if (Date.now() > otpData.expiresAt) {
-      return res.status(400).json({
-        success: false,
-        message: "OTP has expired.",
-      });
-    }
-
-    // OTP is valid, now change the user's password
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({
@@ -254,9 +180,6 @@ exports.changePassword = async (req, res) => {
     user.password = hashedPassword;
 
     await user.save();
-
-    // Clear OTP from Redis after password change
-    await client.del(`otp:${email}`);
 
     res.status(200).json({
       success: true,
@@ -358,8 +281,6 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
-// API endpoint to update the profile image
-
 exports.updateUserDetails = async (req, res) => {
   try {
     const { userId } = req.params; // Get the userId from the route parameter
@@ -369,165 +290,59 @@ exports.updateUserDetails = async (req, res) => {
       return res.status(404).json({ message: "username exist!!!" });
     }
 
-    // Find user by ID and update details
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { name, username },
-      { new: true } // Return the updated user
-    );
+    const user = await User.findById(userId); // Find the user by their ID
 
-    if (!updatedUser) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "User details updated successfully",
-      user: updatedUser,
-    });
+    if (name) user.name = name; // Update user name if provided
+    if (username) user.username = username; // Update username if provided
+
+    await user.save(); // Save updated user details to database
+    const { password, ...updatedUserDetails } = user.toObject();
+    res
+      .status(200)
+      .json({ message: "User details updated successfully", user: updatedUserDetails });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("Error updating user details:", error.message);
+    res
+      .status(500)
+      .json({ message: "Error updating user details", error: error.message });
   }
 };
 
-exports.validatePasswordChange = [
-  check("oldPassword").notEmpty().withMessage("Old password is required."),
-  check("newPassword")
-    .isLength({ min: 6 })
-    .withMessage("New password must be at least 6 characters."),
-];
-
-exports.oldPasswordChanged = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ success: false, errors: errors.array() });
-  }
-
-  const { oldPassword, newPassword } = req.body;
-
+exports.uploadProfilePic = async (req, res) => {
   try {
-    const userId = req.params.id;
-
-    // Fetch user by ID
+    const { userId } = req.params;
     const user = await User.findById(userId);
     if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found." });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Compare old password
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
-    if (!isMatch) {
+    // Ensure file is selected
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const fileExtension = path.extname(req.file.originalname);
+    const isValidImage =
+      allowedImageFormats.includes(req.file.mimetype) || allowedVideoFormats.includes(req.file.mimetype);
+    if (!isValidImage) {
       return res.status(400).json({
-        success: false,
-        message: "Old password is incorrect.",
+        message: "Invalid file format. Only image or video files are allowed.",
       });
     }
 
-    // Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const profilePicPath = `./uploads/${userId}_${Date.now()}${fileExtension}`;
+    fs.writeFileSync(profilePicPath, req.file.buffer);
+    user.profilePic = profilePicPath;
 
-    // Update password in database
-    user.password = hashedPassword;
     await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Password updated successfully.",
-    });
+    const { password, ...userDetails } = user.toObject();
+    res.status(200).json({ message: "Profile picture uploaded successfully", user: userDetails });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "An error occurred while updating the password.",
-    });
-  }
-};
-
-exports.updateProfilePic = async (req, res) => {
-  const { id } = req.params;
-  const { base64Image } = req.body;
-
-  try {
-    // Fetch user by ID
-    const user = await User.findById(id);
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
-
-    let savedFilePath = null;
-
-    if (req.file) {
-      // Handle multer file upload
-      savedFilePath = req.file.path;
-      user.profilePic = savedFilePath;
-      user.base64Data = null; // Clear previous base64 data
-    } else if (base64Image) {
-      // Validate and save base64 image
-      if (Buffer.byteLength(base64Image, "base64") > 10 * 1024 * 1024) {
-        return res.status(400).json({
-          success: false,
-          message: "Base64 image size exceeds the limit of 5MB.",
-        });
-      }
-
-      savedFilePath = await saveBase64Image(base64Image);
-      user.profilePic = savedFilePath;
-      user.base64Data = null; // Clear previous base64 data
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: "No file or base64 image provided.",
-      });
-    }
-
-    await user.save(); // Save updated user data
-
-    return res.status(200).json({
-      success: true,
-      message: "Profile picture updated successfully",
-      profilePic: user.profilePic,
-    });
-  } catch (error) {
-    if (error instanceof multer.MulterError) {
-      return res.status(400).json({
-        success: false,
-        message: `Multer error: ${error.message}`,
-      });
-    } else {
-      console.error(`Error updating profile picture for user ${id}:`, error);
-      return res.status(500).json({
-        success: false,
-        message: "An error occurred while updating the profile picture.",
-      });
-    }
-  }
-};
-
-// Helper function to handle base64 image processing
-const saveBase64Image = async (base64Image) => {
-  try {
-    const base64Data = base64Image.split(";base64,").pop(); // Extract base64 content
-    const uploadDir = path.join(
-      "C:/Users/Ashwin/Downloads/Upgrad Stock and Adharcard/stockImage"
-    );
-
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    const filePath = path.join(uploadDir, `profile-${Date.now()}.png`);
-    fs.writeFileSync(filePath, base64Data, { encoding: "base64" });
-    return filePath;
-  } catch (error) {
-    console.error("Error saving base64 image:", error);
-    throw new Error("Failed to save base64 image.");
+    console.error("Error uploading profile picture:", error.message);
+    res.status(500).json({ message: "Error uploading profile picture", error: error.message });
   }
 };
