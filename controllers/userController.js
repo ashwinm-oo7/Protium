@@ -9,10 +9,11 @@ const path = require("path");
 const upload = require("../utils/FileUpload");
 const dotenv = require("dotenv");
 dotenv.config();
+const { getCache, setCache, delCache } = require("../utils/cache"); // Import delCache
 
 const { check, validationResult } = require("express-validator");
 const transporter = require("../config/nodemailerConfig");
-
+let otpStorage = {};
 const validatePassword = (password) => {
   const passwordRegex =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@])[A-Za-z\d@]{6,}$/;
@@ -35,6 +36,7 @@ exports.registerUser = async (req, res) => {
     if (!name || !email || !username || !password || !otp) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    const cachedOtp = getCache(email);
 
     const newUsers = await User.findOne({ email });
     if (newUsers) {
@@ -56,11 +58,18 @@ exports.registerUser = async (req, res) => {
       username,
       password: hashedPassword,
     });
+    if (!cachedOtp) {
+      return res.status(400).json({ success: false, message: "OTP has expired or does not exist." });
+    }
+
+    if (parseInt(otp) !== cachedOtp) {
+      return res.status(400).json({ success: false, message: "Invalid OTP. Please try again." });
+    }
 
     // Save the new user to the database
     await newUser.save();
     const { password: _, ...userDetails } = newUser.toObject();
-
+delCache(email);
     res
       .status(201)
       .json({ message: "User created successfully", user: userDetails });
@@ -75,28 +84,50 @@ exports.registerUser = async (req, res) => {
 exports.loginUser = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
-
-    // Validate OTP for login if necessary
     if (otp) {
-      console.log("Submitted OTP:", otp);
-      const user = await User.findOne({ email });
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      console.log("Submitted OTP:", otpStorage[email]);
+      console.log("Submitted OTP Type:", typeof otp);
+
+      if (otpStorage[email]) {
+        const { otps: storedOtp, timestamp } = otpStorage[email];
+        const OTP_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes expiry time
+        console.log("Submitted OTP:", otp);
+
+        // Check if OTP has expired
+        if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
+          return res.status(400).json({ message: "OTP has expired" });
+        }
+        console.log(storedOtp === Number(otp), storedOtp, otp);
+        // Validate OTP
+        if (storedOtp === Number(otp)) {
+          // OTP is valid, issue JWT token
+          const user = await User.findOne({ email });
+          if (!user) {
+            return res.status(404).json({ message: "User not found" });
+          }
+
+          const token = jwt.sign(
+            { id: user._id, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
+          );
+
+          // Clear OTP from storage after successful verification
+          delete otpStorage[email];
+
+          // Send response with token and user info
+          return res.status(200).json({
+            message: "Login successful",
+            token,
+            user: { id: user._id, email: user.email },
+          });
+        } else {
+          return res.status(401).json({ message: "Invalid OTP" });
+        }
+      } else {
+        return res.status(404).json({ message: "OTP not found or expired" });
       }
-
-      const token = jwt.sign(
-        { id: user._id, email: user.email },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
-      );
-
-      return res.status(200).json({
-        message: "Login successful",
-        token,
-        user: { id: user._id, email: user.email },
-      });
     }
-
     // Validate the request data
     if (!email || !password) {
       return res
@@ -115,6 +146,20 @@ exports.loginUser = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid password" });
     }
+    const otps = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    otpStorage[email] = {
+      otps,
+      timestamp: Date.now(), // Store OTP and timestamp
+    };
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Your OTP for Login",
+      text: `Your OTP for login is: ${otps}`,
+    };
+    console.log("Stored OTP:", otpStorage[email]);
+    await transporter.sendMail(mailOptions);
 
     const token = jwt.sign(
       { id: user._id, email: user.email },
@@ -145,6 +190,7 @@ exports.loginUser = async (req, res) => {
       .json({ message: "Error during login", error: error.message });
   }
 };
+
 
 // Change Password Endpoint
 exports.changePassword = async (req, res) => {
