@@ -1,7 +1,6 @@
 const transporter = require("../config/nodemailerConfig");
 const User = require("../models/User");
-
-let otpStore = {}; // This will temporarily store OTPs in memory
+const { setCache } = require("../utils/cache"); // Import setCache
 
 exports.generateOtp = () => ({
   otp: Math.floor(100000 + Math.random() * 900000),
@@ -25,7 +24,6 @@ exports.sendOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid input" });
     }
 
-    let subject = "";
     if (reset) {
       if (!(await User.findOne({ email: userEmail }))) {
         return res.status(400).json({ success: false, message: "Email doesn't exist." });
@@ -36,20 +34,14 @@ exports.sendOtp = async (req, res) => {
       }
     }
 
-    if (!email && !mobile) {
-      return res.status(400).json({ success: false, message: "Email required." });
-    }
-
-    if (reset) {
-      subject = "M-Stock Password-Change Verify Your OTP Code";
-    } else {
-      subject = "M-Stock Verify Your Email OTP Code";
-    }
+    const subject = reset
+      ? "M-Stock Password-Change Verify Your OTP Code"
+      : "M-Stock Verify Your Email OTP Code";
 
     const otpData = this.generateOtp();
 
-    // Store OTP in memory
-    otpStore[userEmail] = otpData;
+    // Store OTP in NodeCache
+    setCache(userEmail, otpData.otp);
 
     // Simulate sending OTP (log it for now)
     console.log(`OTP for ${userEmail}: ${otpData.otp}`);
@@ -68,7 +60,6 @@ exports.sendOtp = async (req, res) => {
       res.status(200).json({
         success: true,
         message: "OTP sent.",
-        otpData,
         mailInfo: info,
       });
     });
