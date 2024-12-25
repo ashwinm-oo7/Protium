@@ -7,4 +7,10 @@ const setCache = (key, value) => {
   cache.set(key, value);
   console.log(`Cache set for ${key}: ${value}`);
 };
-module.exports = { setCache, getCache };
+
+const delCache = (key) => {
+  cache.del(key);
+  console.log(`Cache deleted for ${key}`);
+};
+
+module.exports = { setCache, getCache, delCache };
