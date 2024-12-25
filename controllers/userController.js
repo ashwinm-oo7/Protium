@@ -307,7 +307,7 @@ exports.getUserProfile = async (req, res) => {
     });
   } catch (error) {
     console.error(
-      `Error while fetching user profile for user ${id}:`,
+      `Error while fetching user profile for user: `,
       error.message
     );
 
