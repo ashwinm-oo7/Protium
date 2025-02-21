@@ -1,5 +1,5 @@
 const NodeCache = require("node-cache");
-const cache = new NodeCache({ stdTTL: 3000 }); // Cache for 5 minutes
+const cache = new NodeCache({ stdTTL: 30000 }); // Cache for 5 minutes
 
 const getCache = (key) => cache.get(key);
 

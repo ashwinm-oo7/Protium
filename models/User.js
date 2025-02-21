@@ -8,9 +8,11 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    isAdmin: { type: Boolean, default: false, required: true }, // Fixed default type
     walletBalance: {
       type: Number,
-      default: 0, // Default wallet balance
+      default: 0,
+      min: 0, // Default wallet balance
     },
     profilePic: { type: String, default: "" },
     mobile: { type: Number },
