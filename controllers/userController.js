@@ -205,17 +205,32 @@ exports.loginUser = async (req, res) => {
 // Change Password Endpoint
 exports.changePassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
-    if (!email || !otp || !newPassword) {
+    const { email, otp, newPassword, mobile } = req.body;
+    if (!otp || !newPassword) {
       return res.status(400).json({
         success: false,
         message: "Email, OTP, and new password are required.",
       });
     }
+    let userEmail;
+
+    if (email) {
+      userEmail = email;
+      // Validate email and send OTP
+    } else if (mobile) {
+      const user = await User.findOne({ mobile });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      userEmail = user.email;
+      // Validate mobile and send OTP
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid input" });
+    }
 
     console.log(email, otp, newPassword);
     // Verify OTP first
-    const storedOtp = await client.get(`otp:${email}`);
+    const storedOtp = await client.get(`otp:${userEmail}`);
     if (!storedOtp) {
       return res.status(400).json({
         success: false,
@@ -240,7 +255,7 @@ exports.changePassword = async (req, res) => {
     }
 
     // OTP is valid, now change the user's password
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: userEmail });
     if (!user) {
       return res.status(400).json({
         success: false,
@@ -256,7 +271,7 @@ exports.changePassword = async (req, res) => {
     await user.save();
 
     // Clear OTP from Redis after password change
-    await client.del(`otp:${email}`);
+    await client.del(`otp:${userEmail}`);
 
     res.status(200).json({
       success: true,
@@ -339,18 +354,22 @@ exports.getUserProfile = async (req, res) => {
 
     if (user.profilePic) {
       const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
-      base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
+      if (imageBuffer) {
+        base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
+      } else {
+        return null;
+      }
     }
     return res.status(200).json({
       success: true,
       user: {
         ...user.toObject(),
-        profilePicBase64: base64Image, // Add base64 image to the response
+        profilePicBase64: base64Image || null, // Add base64 image to the response
       },
     });
   } catch (error) {
     console.error(
-      `Error while fetching user profile for user ${id}:`,
+      `Error while fetching user profile for user :`,
       error.message
     );
 

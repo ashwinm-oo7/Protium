@@ -1,8 +1,10 @@
 const redis = require("redis");
 // const { console } = require("inspector");
+const dotenv = require("dotenv");
+dotenv.config();
 
 const client = redis.createClient({
-  url: "redis://localhost:6379",
+  url: process.env.REDIS_URL, // Fetch from env variable
 });
 
 client.on("error", (err) => console.error("Redis Client Error:", err));
