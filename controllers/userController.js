@@ -112,7 +112,7 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-exports.loginUser = async (req, res) => {
+exports.loginUserWAIT = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
     if (otp) {
@@ -126,6 +126,8 @@ exports.loginUser = async (req, res) => {
 
         // Check if OTP has expired
         if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
+          delete otpStorage[email];
+
           return res.status(400).json({ message: "OTP has expired" });
         }
         console.log(storedOtp === Number(otp), storedOtp, otp);
@@ -145,6 +147,20 @@ exports.loginUser = async (req, res) => {
 
           // Clear OTP from storage after successful verification
           delete otpStorage[email];
+          let base64Image = null;
+
+          if (user.profilePic && fs.existsSync(user.profilePic)) {
+            try {
+              const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
+              base64Image = `data:image/png;base64,${imageBuffer.toString(
+                "base64"
+              )}`; // Convert to base64
+            } catch (err) {
+              console.error("Error reading profile picture:", err.message);
+              base64Image = null; // Set null if file cannot be read
+            }
+          }
+
           const { password: _, ...userDetails } = user.toObject();
           userDetails.profilePicBase64 = base64Image;
           res
@@ -208,7 +224,7 @@ exports.loginUser = async (req, res) => {
           ${otps}
         </div>
   
-        <p style="text-align: center; margin-top: 10px;">This OTP is valid for only 5 minutes.</p>
+        <p style="text-align: center; margin-top: 10px;">This OTP is valid for only 1 minutes.</p>
   
         <!-- Login Button -->
         <div style="text-align: center; margin-top: 20px;">
@@ -237,25 +253,25 @@ exports.loginUser = async (req, res) => {
     console.log("Stored OTP:", otpStorage[email]);
     await transporter.sendMail(mailOptions);
 
-    const token = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
-    );
-    let base64Image = null;
+    // const token = jwt.sign(
+    //   { id: user._id, email: user.email },
+    //   process.env.JWT_SECRET,
+    //   { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
+    // );
+    // let base64Image = null;
 
-    if (user.profilePic) {
-      try {
-        const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
-        base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
-      } catch (err) {
-        console.error("Error reading profile picture:", err.message);
-        base64Image = null; // Set null if file cannot be read
-      }
-    }
+    // if (user.profilePic) {
+    //   try {
+    //     const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
+    //     base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
+    //   } catch (err) {
+    //     console.error("Error reading profile picture:", err.message);
+    //     base64Image = null; // Set null if file cannot be read
+    //   }
+    // }
 
-    const { password: _, ...userDetails } = user.toObject();
-    userDetails.profilePicBase64 = base64Image;
+    // const { password: _, ...userDetails } = user.toObject();
+    // userDetails.profilePicBase64 = base64Image;
     res.status(200).json({ message: "Otp Sent successful" });
   } catch (error) {
     console.error("Error during login:", error);
@@ -264,6 +280,125 @@ exports.loginUser = async (req, res) => {
       .json({ message: "Error during login", error: error.message });
   }
 };
+exports.loginUser = async (req, res) => {
+  try {
+    const { email, password, otp } = req.body;
+
+    if (otp) {
+      if (otpStorage[email]) {
+        const { otps: storedOtp, timestamp } = otpStorage[email];
+        const OTP_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes expiry time
+
+        if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
+          return res.status(400).json({ message: "OTP has expired" }); // Return to prevent further execution
+        }
+
+        if (storedOtp === Number(otp)) {
+          const user = await User.findOne({ email });
+          if (!user) {
+            return res.status(404).json({ message: "User not found" }); // Return to prevent further execution
+          }
+
+          const token = jwt.sign(
+            { id: user._id, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
+          );
+
+          delete otpStorage[email]; // Clear OTP after successful verification
+
+          let base64Image = null;
+          if (user.profilePic) {
+            try {
+              const imageBuffer = fs.readFileSync(user.profilePic);
+              base64Image = `data:image/png;base64,${imageBuffer.toString(
+                "base64"
+              )}`;
+            } catch (err) {
+              console.error("Error reading profile picture:", err.message);
+              base64Image = null; // Handle missing profile picture gracefully
+            }
+          }
+
+          const { password: _, ...userDetails } = user.toObject();
+          userDetails.profilePicBase64 = base64Image;
+
+          return res
+            .status(200)
+            .json({ message: "Login successful", token, user: userDetails }); // Return to prevent further execution
+        } else {
+          return res.status(401).json({ message: "Invalid OTP" }); // Return to prevent further execution
+        }
+      } else {
+        return res.status(404).json({ message: "OTP not found or expired" }); // Return to prevent further execution
+      }
+    }
+
+    // If OTP is not provided, proceed with password authentication
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" }); // Return to prevent further execution
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" }); // Return to prevent further execution
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: "Invalid password" }); // Return to prevent further execution
+    }
+
+    // Generate OTP
+    const otps = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    otpStorage[email] = { otps, timestamp: Date.now() };
+
+    const mailOptions = {
+      from: `UpStock :  <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "🔑 Your OTP for Secure Login",
+      html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+        <div style="text-align: center;">
+          <a href="https://upstock-in.vercel.app/">
+            <img src="https://res.cloudinary.com/dgw6uprvj/image/upload/v1740343304/cdb5a94a-72b8-4682-bec5-279944c4471d_te1b75.jpg" alt="Company Logo" style="max-width: 150px; margin-bottom: 10px;">
+          </a>
+        </div>
+        <h2 style="text-align: center; color: #333;">🔒 Secure Login OTP</h2>
+        <h2 style="text-align: center; color: #333;">Do Not Share AnyOne</h2>
+        <p style="text-align: center; font-size: 18px;">Use the OTP below to log in securely:</p>
+    <div style="text-align: center; font-size: 24px; font-weight: bold; background: #f3f3f3; padding: 15px; border-radius: 5px; width: 50%; margin: auto; cursor: pointer;" onclick="copyToClipboard('${otps}')">
+          ${otps}
+        </div>
+        <p style="text-align: center; margin-top: 10px;">This OTP is valid for only 1 minute.</p>
+        <div style="text-align: center; margin-top: 20px;">
+          <a href="https://upstock-in.vercel.app/login" style="background-color: #28a745; color: white; padding: 12px 20px; text-decoration: none; font-size: 16px; border-radius: 5px; display: inline-block;">Login Now</a>
+        </div>
+        <script>
+      function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(function() {
+          alert('OTP copied to clipboard!');
+        }, function(err) {
+          console.error('Could not copy OTP: ', err);
+        });
+      }
+    </script>
+      </div>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    return res.status(200).json({ message: "OTP Sent successfully" }); // Return to prevent further execution
+  } catch (error) {
+    console.error("Error during login:", error);
+    return res
+      .status(500)
+      .json({ message: "Error during login", error: error.message }); // Return to prevent further execution
+  }
+};
+
 // Change Password Endpoint
 exports.changePassword = async (req, res) => {
   try {
