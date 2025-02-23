@@ -47,9 +47,9 @@ exports.sendOtp = async (req, res) => {
     }
 
     if (reset) {
-      subject = "M-Stock Password-Change Verify Your OTP Code";
+      subject = "UpStock Password-Change Verify Your OTP Code";
     } else {
-      subject = "M-Stock Verify Your Email OTP Code";
+      subject = "UpStock Verify Your Email OTP Code";
     }
     const otpData = this.generateOtp();
 
@@ -64,7 +64,7 @@ exports.sendOtp = async (req, res) => {
     console.log(`OTP for ${userEmail}: ${otpData.otp}`);
 
     const mailOptions = {
-      from: '"M-Stock" <ashwinmaurya1997@gmail.com>',
+      from: '"UpStock" <ashwinmaurya1997@gmail.com>',
       to: userEmail,
       subject: subject,
       text: `Your OTP is ${otpData.otp}. It is valid for 5 minutes.`,

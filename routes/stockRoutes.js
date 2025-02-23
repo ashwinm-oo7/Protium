@@ -11,7 +11,7 @@ const {
 router.get("/getAllStockDetails", getAllStockDetails);
 // Add stock
 
-router.post("/add", addStock);
+router.post("/adding-stock-data", addStock);
 
 router.get("/stock-detail/:stockId", getStockDetails);
 

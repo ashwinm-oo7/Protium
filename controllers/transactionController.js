@@ -85,105 +85,32 @@ const recordBuyTransaction = async (req, res) => {
   }
 };
 
-// Record sell transaction
-const recordSellTransactionwait = async (req, res) => {
-  try {
-    const { userId, stockId, quantity } = req.body;
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: "Invalid User ID" });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(stockId)) {
-      return res.status(400).json({ message: "Invalid Stock ID" });
-    }
-
-    const stock = await Stock.findById(stockId);
-    if (!stock) {
-      return res.status(404).json({ message: "Stock not found" });
-    }
-
-    // Check if the user has enough stock to sell
-    let portfolio = await Portfolio.findOne({ userId }).populate(
-      "stocks.stockId"
-    );
-    if (!portfolio) {
-      return res.status(404).json({ message: "Portfolio not found" });
-    }
-
-    const existingStock = portfolio.stocks.find(
-      (item) => item.stockId._id.toString() === stockId
-    );
-
-    if (!existingStock) {
-      return res.status(400).json({ message: "No stock found in portfolio" });
-    }
-
-    if (existingStock.quantity < quantity || quantity <= 0) {
-      return res.status(400).json({ message: "Not enough stock to sell" });
-    }
-    const purchaseValue = existingStock.quantity * existingStock.purchasePrice;
-    const costPrice = existingStock.purchasePrice * quantity;
-    const saleValue = quantity * stock.currentPrice;
-    const profitLoss = saleValue - costPrice;
-    // Record the sell transaction
-    const transaction = new Transaction({
-      userId,
-      stockId,
-      type: "sell",
-      quantity,
-      profitLoss,
-      price: stock.currentPrice,
-    });
-
-    // Save the transaction
-    await transaction.save();
-    const user = await User.findById(userId);
-    user.walletBalance += saleValue;
-    await user.save();
-
-    // Update the user's portfolio
-    existingStock.quantity -= quantity;
-    if (existingStock.quantity === 0) {
-      await Portfolio.findOneAndUpdate(
-        { userId },
-        {
-          $pull: { stocks: { stockId: new mongoose.Types.ObjectId(stockId) } },
-        },
-        { new: true, runValidators: true }
-      );
-    } else {
-      // Otherwise, update the stock's quantity in the portfolio
-      await Portfolio.findOneAndUpdate(
-        { userId, "stocks.stockId": new mongoose.Types.ObjectId(stockId) },
-        { $set: { "stocks.$.quantity": existingStock.quantity } },
-        { new: true }
-      );
-    }
-
-    // await portfolio.save();
-    res.status(201).json({
-      message: "Stock sold and transaction recorded",
-      transaction,
-      walletBalance: user.walletBalance,
-    });
-  } catch (error) {
-    console.error(error);
-    res
-      .status(500)
-      .json({ message: "Error recording sell transaction", error });
-  }
-};
 const recordSellTransaction = async (req, res) => {
   try {
     const { userId, stockId, quantity } = req.body;
-
+    console.log(userId);
     // Validate User ID and Stock ID
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ message: "User not logged in. Please login to continue." });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ message: "Invalid User ID" });
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(stockId)) {
       return res.status(400).json({ message: "Invalid Stock ID" });
+    }
+    if (!quantity || quantity <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Quantity must be greater than 0" });
     }
 
     const stock = await Stock.findById(stockId);
@@ -196,7 +123,9 @@ const recordSellTransaction = async (req, res) => {
       "stocks.stockId"
     );
     if (!portfolio) {
-      return res.status(404).json({ message: "Portfolio not found" });
+      return res
+        .status(404)
+        .json({ message: "Portfolio not found for this user" });
     }
 
     const existingStock = portfolio.stocks.find(
@@ -229,7 +158,7 @@ const recordSellTransaction = async (req, res) => {
     await transaction.save();
 
     // Add the sale value to the user's wallet balance
-    const user = await User.findById(userId);
+
     user.walletBalance += saleValue;
     await user.save();
 
@@ -259,10 +188,24 @@ const recordSellTransaction = async (req, res) => {
       walletBalance: user.walletBalance, // Send updated wallet balance
     });
   } catch (error) {
-    console.error(error);
-    res
-      .status(500)
-      .json({ message: "Error recording sell transaction", error });
+    console.error("Error recording sell transaction:", error);
+
+    // Handle specific errors
+    if (error.name === "ValidationError") {
+      return res
+        .status(400)
+        .json({ message: "Validation Error", details: error.message });
+    } else if (error.name === "MongoError") {
+      return res
+        .status(500)
+        .json({ message: "Database Error", details: error.message });
+    }
+
+    // General server error
+    res.status(500).json({
+      message: "Error recording sell transaction",
+      error: error.message,
+    });
   }
 };
 
