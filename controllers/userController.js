@@ -533,44 +533,55 @@ exports.getUserProfile = async (req, res) => {
   try {
     const { id } = req.params;
     console.log(id);
-    if (!id) {
-      console.log("user not found");
-      return;
-    }
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid User ID" });
-    }
-    const user = await User.findById(id);
 
+    if (!id) {
+      console.log("User ID not provided");
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID required" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid User ID" });
+    }
+
+    const user = await User.findById(id);
     if (!user) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
+
     let base64Image = null;
 
+    // Check if the user has a profile picture before reading the file
     if (user.profilePic) {
-      const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
-      if (imageBuffer) {
-        base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
-      } else {
-        return null;
+      try {
+        if (fs.existsSync(user.profilePic)) {
+          const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
+          base64Image = `data:image/png;base64,${imageBuffer.toString(
+            "base64"
+          )}`;
+        } else {
+          console.warn(`Profile picture not found: ${user.profilePic}`);
+        }
+      } catch (fileError) {
+        console.error(`Error reading profile picture:`, fileError.message);
       }
     }
+
     return res.status(200).json({
       success: true,
       user: {
         ...user.toObject(),
-        profilePicBase64: base64Image || null, // Add base64 image to the response
+        profilePicBase64: base64Image, // Return base64 image if available, otherwise null
       },
     });
   } catch (error) {
-    console.error(
-      `Error while fetching user profile for user :`,
-      error.message
-    );
-
-    res.status(500).json({ success: false, message: error.message });
+    console.error(`Error while fetching user profile:`, error.message);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
 

@@ -3,7 +3,14 @@ const Stock = require("../models/Stock");
 const Portfolio = require("../models/Portfolio");
 const User = require("../models/User"); // Import User model
 const mongoose = require("mongoose");
+const express = require("express");
+const axios = require("axios");
+const nodemailer = require("nodemailer");
+const { sendEmailNotificationAlert } = require("../services/emailServices");
+require("dotenv").config();
 
+const app = express();
+app.use(express.json());
 // Record buy transaction
 const recordBuyTransaction = async (req, res) => {
   try {
@@ -73,6 +80,14 @@ const recordBuyTransaction = async (req, res) => {
     }
 
     await portfolio.save();
+    sendEmailNotificationAlert(user.email, "Stock Buy Transaction", {
+      stockName: stock.name,
+      stockSymbol: stock.symbol,
+      quantity,
+      price: stock.currentPrice,
+      totalCost: totalPrice,
+      walletBalance: user.walletBalance,
+    });
 
     res.status(201).json({
       message: "Buy transaction recorded successfully",
@@ -144,7 +159,7 @@ const recordSellTransaction = async (req, res) => {
     const costPrice = existingStock.purchasePrice * quantity;
     const saleValue = quantity * stock.currentPrice;
     const profitLoss = saleValue - costPrice;
-
+    const totalPrice = stock.currentPrice * quantity;
     // Create and save the sell transaction
     const transaction = new Transaction({
       userId,
@@ -181,6 +196,14 @@ const recordSellTransaction = async (req, res) => {
         { new: true }
       );
     }
+    sendEmailNotificationAlert(user.email, "Stock Sell Transaction", {
+      stockName: stock.name,
+      stockSymbol: stock.symbol,
+      quantity,
+      price: stock.currentPrice,
+      totalCost: totalPrice,
+      walletBalance: user.walletBalance,
+    });
 
     res.status(201).json({
       message: "Stock sold and transaction recorded",

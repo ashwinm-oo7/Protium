@@ -4,8 +4,15 @@ const dotenv = require("dotenv");
 const Stock = require("../models/Stock");
 dotenv.config();
 const mongoose = require("mongoose");
+const { checkStockAlerts } = require("../services/alertService");
 
 const API_KEY = process.env.API_KEY;
+
+// Run the alert check every 5 minutes
+cron.schedule("*/180 * * * *", async () => {
+  console.log("⏳ Running stock alert checker...");
+  await checkStockAlerts();
+});
 
 // Schedule cron job to run every hour
 cron.schedule("0 * * * *", async () => {

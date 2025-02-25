@@ -67,7 +67,36 @@ exports.sendOtp = async (req, res) => {
       from: '"UpStock" <ashwinmaurya1997@gmail.com>',
       to: userEmail,
       subject: subject,
-      text: `Your OTP is ${otpData.otp}. It is valid for 5 minutes.`,
+      // text: `Your OTP is ${otpData.otp}. It is valid for 5 minutes.`,
+      html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+        <div style="text-align: center;">
+          <a href="https://upstock-in.vercel.app/">
+            <img src="https://res.cloudinary.com/dgw6uprvj/image/upload/v1740343304/cdb5a94a-72b8-4682-bec5-279944c4471d_te1b75.jpg" alt="Company Logo" style="max-width: 150px; margin-bottom: 10px;">
+          </a>
+        </div>
+        <h2 style="text-align: center; color: #333;">🔒 Secure  OTP</h2>
+        <h2 style="text-align: center; color: #333;">Do Not Share AnyOne</h2>
+        <p style="text-align: center; font-size: 18px;">Use the OTP below to verify in securely:</p>
+    <div style="text-align: center; font-size: 24px; font-weight: bold; background: #f3f3f3; padding: 15px; border-radius: 5px; width: 50%; margin: auto; cursor: pointer;" onclick="copyToClipboard('${otpData.otp}')">
+          ${otpData.otp}
+        </div>
+        <p style="text-align: center; margin-top: 10px;">This OTP is valid for only 1 minute.</p>
+        <div style="text-align: center; margin-top: 20px;">
+          <a href="https://upstock-in.vercel.app/login" style="background-color: #28a745; color: white; padding: 12px 20px; text-decoration: none; font-size: 16px; border-radius: 5px; display: inline-block;">Login Now</a>
+        </div>
+        <script>
+      
+      function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(function() {
+          alert('OTP copied to clipboard!');
+        }, function(err) {
+          console.error('Could not copy OTP: ', err);
+        });
+      }
+    </script>
+      </div>
+      `,
     };
 
     transporter.sendMail(mailOptions, (err, info) => {

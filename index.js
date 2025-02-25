@@ -12,6 +12,7 @@ const userRoutes = require("./routes/userRoutes");
 const protectedRoutes = require("./routes/protectedRoutes");
 const yahooRoutes = require("./controllers/yahooFinance");
 const razorpayRoutes = require("./routes/RazorpayRoutes");
+const alertRoutes = require("./routes/alerts");
 const app = express();
 const PORT = process.env.BACKEND_PORT || 4000;
 
@@ -52,6 +53,7 @@ mongoose
 // Use routes
 
 // Add protected route to the main server
+
 app.use("/api/protected", protectedRoutes);
 
 app.use("/api/stocks", stockRoutes);
@@ -60,6 +62,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/yahoo", yahooRoutes);
 app.use("/api/razorpay", razorpayRoutes);
+app.use("/api/alerts", alertRoutes);
 app.use(errorHandler);
 
 // Start the server
