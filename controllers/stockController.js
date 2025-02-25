@@ -226,143 +226,7 @@ const getLiveStockPrice = async (req, res, next) => {
   }
 };
 
-const getLiveStockPricewai = async (req, res, next) => {
-  const { symbol } = req.params;
-
-  try {
-    const cachedPrice = getCache(symbol);
-    if (cachedPrice) {
-      console.log(cachedPrice);
-      return res.status(200).json({ symbol, ...cachedPrice });
-    }
-
-    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=5min&apikey=${API_KEY}`;
-    const response = await axios.get(url);
-
-    const stockData = response.data["Time Series (5min)"];
-    if (!stockData) {
-      return res.status(500).json({
-        error: "Failed to fetch stock data",
-        details: response.data, // Helps in debugging
-      });
-    }
-
-    const latestTime = Object.keys(stockData)[0];
-    const {
-      "1. open": open,
-      "2. high": high,
-      "3. low": low,
-      "4. close": close,
-      "5. volume": volume,
-    } = stockData[latestTime];
-
-    // Update the stock price in the database
-    const stock = await Stock.findOne({ symbol });
-    if (stock) {
-      const today = new Date().toISOString().split("T")[0];
-      const lastHistoryEntry = stock.priceHistory.at(-1);
-
-      // Add a new entry to priceHistory if the date is different or price has changed
-      if (
-        !lastHistoryEntry ||
-        lastHistoryEntry.date.toISOString().split("T")[0] !== today
-      ) {
-        stock.priceHistory.push({
-          date: new Date(),
-          open,
-          high,
-          low,
-          close,
-          volume,
-          price: close,
-        });
-      }
-
-      stock.currentPrice = close;
-      await stock.save();
-    }
-
-    const stockInfo = { open, high, low, close, volume };
-    setCache(symbol, stockInfo);
-
-    res.status(200).json({ symbol, ...stockInfo });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const getLiveStockPriceWA = async (req, res, next) => {
-  const { symbol } = req.params;
-
-  try {
-    const cachedPrice = getCache(symbol);
-    if (cachedPrice) {
-      console.log(cachedPrice);
-      return res.status(200).json({ symbol, price: cachedPrice });
-    }
-
-    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=5min&apikey=${API_KEY}`;
-    const response = await axios.get(url);
-
-    const stockData = response.data["Time Series (5min)"];
-    if (!stockData) {
-      return res.status(500).json({
-        error: "Failed to fetch stock data",
-        details: response.data, // Helps in debugging
-      });
-    }
-
-    const latestTime = Object.keys(stockData)[0];
-    const currentPrice = stockData[latestTime]["4. close"];
-
-    // Update the stock price in the database
-    const stock = await Stock.findOne({ symbol });
-    if (stock) {
-      const today = new Date().toISOString().split("T")[0];
-      const lastHistoryEntry = stock.priceHistory.at(-1);
-
-      // Add a new entry to priceHistory if the date is different or price has changed
-      if (
-        !lastHistoryEntry ||
-        lastHistoryEntry.date.toISOString().split("T")[0] !== today
-      ) {
-        stock.priceHistory.push({ date: new Date(), price: currentPrice });
-      }
-
-      stock.currentPrice = currentPrice;
-      await stock.save();
-    }
-
-    setCache(symbol, currentPrice);
-    res.status(200).json({ symbol, price: currentPrice });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const fetchStockPrice = async (stockId) => {
-  return new Promise((resolve, reject) => {
-    client.get(stockId, async (err, cachedPrice) => {
-      if (err) return reject(err);
-
-      if (cachedPrice) {
-        console.log("Cache hit");
-        return resolve(JSON.parse(cachedPrice));
-      }
-
-      console.log("Cache miss");
-      // Simulate fetching price from an API or database
-      const price = await Stock.findById(stockId).select("currentPrice").lean();
-
-      if (!price) return reject(new Error("Stock not found"));
-
-      client.setex(stockId, 3600, JSON.stringify(price)); // Cache for 1 hour
-      return resolve(price);
-    });
-  });
-};
-
-const getAllStockDetails = async (req, res) => {
+const getAllStockDetailsWAIT = async (req, res) => {
   try {
     // Fetch all stocks from the database
     const cacheKey = "getAllStockDetails";
@@ -398,6 +262,61 @@ const getAllStockDetails = async (req, res) => {
     setCache("getAllStockDetails", stocksDetails);
     // Return all stocks details with daily change
     res.status(200).json(stocksDetails);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+const getAllStockDetails = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1; // Get current page from query params (default 1)
+    const limit = parseInt(req.query.limit) || 20; // Set limit per page (default 20)
+    const skip = (page - 1) * limit; // Calculate number of documents to skip
+
+    // Cache key with pagination to store different pages separately
+    const cacheKey = `getAllStockDetails_page${page}_limit${limit}`;
+    const cachedData = getCache(cacheKey);
+    if (cachedData) {
+      console.log("Cache hit for paginated getAllStockDetails");
+      return res.status(200).json(cachedData);
+    }
+
+    // Fetch paginated stocks
+    const stocks = await Stock.find().skip(skip).limit(limit).lean();
+    const totalCount = await Stock.countDocuments(); // Get total number of stocks
+
+    if (!stocks || stocks.length === 0) {
+      return res.status(404).json({ error: "No stocks found" });
+    }
+
+    // Calculate daily change for each stock
+    const stocksDetails = stocks.map((stock) => {
+      const dailyChange =
+        stock.priceHistory?.length > 1
+          ? stock.currentPrice -
+            stock.priceHistory[stock.priceHistory?.length - 2].price
+          : 0;
+
+      return {
+        _id: stock._id,
+        symbol: stock.symbol,
+        name: stock.name,
+        currentPrice: stock.currentPrice,
+        dailyChange,
+        priceHistory: stock.priceHistory,
+      };
+    });
+
+    const response = {
+      stocks: stocksDetails,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit),
+      totalStocks: totalCount,
+    };
+
+    setCache(cacheKey, response);
+    res.status(200).json(response);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
