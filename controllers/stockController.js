@@ -272,10 +272,20 @@ const getAllStockDetails = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1; // Get current page from query params (default 1)
     const limit = parseInt(req.query.limit) || 20; // Set limit per page (default 20)
+    const search = req.query.search ? req.query.search.trim() : "";
     const skip = (page - 1) * limit; // Calculate number of documents to skip
+    let searchQuery = {};
+    if (search) {
+      searchQuery = {
+        $or: [
+          { name: { $regex: search, $options: "i" } }, // Case-insensitive name search
+          { symbol: { $regex: search, $options: "i" } }, // Case-insensitive symbol search
+        ],
+      };
+    }
 
     // Cache key with pagination to store different pages separately
-    const cacheKey = `getAllStockDetails_page${page}_limit${limit}`;
+    const cacheKey = `getAllStockDetails_page${page}_limit${limit}_search${search}`;
     const cachedData = getCache(cacheKey);
     if (cachedData) {
       console.log("Cache hit for paginated getAllStockDetails");
@@ -283,8 +293,8 @@ const getAllStockDetails = async (req, res) => {
     }
 
     // Fetch paginated stocks
-    const stocks = await Stock.find().skip(skip).limit(limit).lean();
-    const totalCount = await Stock.countDocuments(); // Get total number of stocks
+    const stocks = await Stock.find(searchQuery).skip(skip).limit(limit).lean();
+    const totalCount = await Stock.countDocuments(searchQuery); // Get total number of stocks
 
     if (!stocks || stocks.length === 0) {
       return res.status(404).json({ error: "No stocks found" });
