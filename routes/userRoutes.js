@@ -19,8 +19,10 @@ const {
   oldPasswordChanged,
   validatePasswordChange,
   updateProfilePic,
+  getUser,
 } = require("../controllers/userController");
 const upload = require("../utils/FileUpload");
+const authMiddleware = require("../middleware/authMiddleware");
 
 // Send OTP
 router.post("/send-otp", sendOtp);
@@ -35,6 +37,7 @@ router.post("/validate-email", validateEmail);
 router.post("/change-password", changePassword);
 
 router.get("/user-profile/:id", getUserProfile);
+router.get("/me", authMiddleware, getUser);
 
 router.post(
   "/updateProfilePic/:id",

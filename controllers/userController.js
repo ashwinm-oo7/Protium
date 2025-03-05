@@ -41,14 +41,6 @@ const adBanners = [
 ];
 const randomAd = adBanners[Math.floor(Math.random() * adBanners.length)];
 
-const allowedImageFormats = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-];
-const allowedVideoFormats = ["video/mp4", "video/webm", "video/ogg"];
-
 exports.registerUser = async (req, res) => {
   try {
     const { name, email, username, password, otp } = req.body;
@@ -112,184 +104,17 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-exports.loginUserWAIT = async (req, res) => {
-  try {
-    const { email, password, otp } = req.body;
-    if (otp) {
-      console.log("Submitted OTP:", otpStorage[email]);
-      console.log("Submitted OTP Type:", typeof otp);
-
-      if (otpStorage[email]) {
-        const { otps: storedOtp, timestamp } = otpStorage[email];
-        const OTP_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes expiry time
-        console.log("Submitted OTP:", otp);
-
-        // Check if OTP has expired
-        if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
-          delete otpStorage[email];
-
-          return res.status(400).json({ message: "OTP has expired" });
-        }
-        console.log(storedOtp === Number(otp), storedOtp, otp);
-        // Validate OTP
-        if (storedOtp === Number(otp)) {
-          // OTP is valid, issue JWT token
-          const user = await User.findOne({ email });
-          if (!user) {
-            return res.status(404).json({ message: "User not found" });
-          }
-
-          const token = jwt.sign(
-            { id: user._id, email: user.email },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
-          );
-
-          // Clear OTP from storage after successful verification
-          delete otpStorage[email];
-          let base64Image = null;
-
-          if (user.profilePic && fs.existsSync(user.profilePic)) {
-            try {
-              const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
-              base64Image = `data:image/png;base64,${imageBuffer.toString(
-                "base64"
-              )}`; // Convert to base64
-            } catch (err) {
-              console.error("Error reading profile picture:", err.message);
-              base64Image = null; // Set null if file cannot be read
-            }
-          }
-
-          const { password: _, ...userDetails } = user.toObject();
-          userDetails.profilePicBase64 = base64Image;
-          res
-            .status(200)
-            .json({ message: "Login successful", token, user: userDetails });
-          // Send response with token and user info
-          // return res.status(200).json({
-          //   message: "Login successful",
-          //   token,
-          //   user: { id: user._id, email: user.email },
-          // });
-        } else {
-          return res.status(401).json({ message: "Invalid OTP" });
-        }
-      } else {
-        return res.status(404).json({ message: "OTP not found or expired" });
-      }
-    }
-    // Validate the request data
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
-    }
-
-    // Find the user by email
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Verify the password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid password" });
-    }
-    const otps = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
-    otpStorage[email] = {
-      otps,
-      timestamp: Date.now(), // Store OTP and timestamp
-    };
-
-    const mailOptions = {
-      from: `UpStock :  <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "🔑 Your OTP for Secure Login",
-      html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-        
-        <!-- Company Logo -->
-        <div style="text-align: center;">
-        <a href="https://upstock-in.vercel.app/"
-          <img src="https://res.cloudinary.com/dgw6uprvj/image/upload/v1740343304/cdb5a94a-72b8-4682-bec5-279944c4471d_te1b75.jpg" alt="Company Logo" style="max-width: 150px; margin-bottom: 10px;">
-        </a></div>
-  
-        <h2 style="text-align: center; color: #333;">🔒 Secure Login OTP</h2>
-        <p style="text-align: center; font-size: 18px;">Use the OTP below to log in securely:</p>
-  
-        <!-- OTP Code -->
-        <div style="text-align: center; font-size: 24px; font-weight: bold; background: #f3f3f3; padding: 15px; border-radius: 5px; width: 50%; margin: auto;">
-          ${otps}
-        </div>
-  
-        <p style="text-align: center; margin-top: 10px;">This OTP is valid for only 1 minutes.</p>
-  
-        <!-- Login Button -->
-        <div style="text-align: center; margin-top: 20px;">
-          <a href="https://upstock-in.vercel.app/login" style="background-color: #28a745; color: white; padding: 12px 20px; text-decoration: none; font-size: 16px; border-radius: 5px; display: inline-block;">Login Now</a>
-        </div>
-  
-        <!-- Random Advertisement -->
-        <div style="margin-top: 30px; text-align: center;">
-          <a href="${randomAd.link}" target="_blank">
-            <img src="${
-              randomAd.image
-            }" alt="Advertisement" style="max-width: 100%; border-radius: 5px;">
-          </a>
-        </div>
-  
-        <hr style="margin: 20px 0;">
-  
-        <p style="text-align: center; font-size: 12px; color: #777;">If you didn’t request this OTP, please ignore this email.</p>
-        <p style="text-align: center; font-size: 12px; color: #777;">
-          &copy; ${new Date().getFullYear()} Your Company. All Rights Reserved.
-        </p>
-      </div>
-    `,
-      // text: `Your OTP for login is: ${otps}`,
-    };
-    console.log("Stored OTP:", otpStorage[email]);
-    await transporter.sendMail(mailOptions);
-
-    // const token = jwt.sign(
-    //   { id: user._id, email: user.email },
-    //   process.env.JWT_SECRET,
-    //   { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
-    // );
-    // let base64Image = null;
-
-    // if (user.profilePic) {
-    //   try {
-    //     const imageBuffer = fs.readFileSync(user.profilePic); // Read file from server
-    //     base64Image = `data:image/png;base64,${imageBuffer.toString("base64")}`; // Convert to base64
-    //   } catch (err) {
-    //     console.error("Error reading profile picture:", err.message);
-    //     base64Image = null; // Set null if file cannot be read
-    //   }
-    // }
-
-    // const { password: _, ...userDetails } = user.toObject();
-    // userDetails.profilePicBase64 = base64Image;
-    res.status(200).json({ message: "Otp Sent successful" });
-  } catch (error) {
-    console.error("Error during login:", error);
-    res
-      .status(500)
-      .json({ message: "Error during login", error: error.message });
-  }
-};
 exports.loginUser = async (req, res) => {
   try {
     const { email, password, otp } = req.body;
+    const OTP_EXPIRY_TIME = 1 * 60 * 1000; // 1 minutes expiry time
 
     if (otp) {
       if (otpStorage[email]) {
         const { otps: storedOtp, timestamp } = otpStorage[email];
-        const OTP_EXPIRY_TIME = 5 * 60 * 1000; // 5 minutes expiry time
 
         if (Date.now() - timestamp > OTP_EXPIRY_TIME) {
+          delete otpStorage[email];
           return res.status(400).json({ message: "OTP has expired" }); // Return to prevent further execution
         }
 
@@ -322,6 +147,14 @@ exports.loginUser = async (req, res) => {
 
           const { password: _, ...userDetails } = user.toObject();
           userDetails.profilePicBase64 = base64Image;
+          res.cookie("authToken", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production" ? true : false,
+            sameSite: "None",
+            // sameSite: "Strict",
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+            domain: "localhost",
+          });
 
           return res
             .status(200)
@@ -396,6 +229,22 @@ exports.loginUser = async (req, res) => {
     return res
       .status(500)
       .json({ message: "Error during login", error: error.message }); // Return to prevent further execution
+  }
+};
+exports.getUser = async (req, res) => {
+  try {
+    const token = req.cookies.authToken; // ✅ Get token from HTTP-only cookie
+
+    if (!token) return res.status(401).json({ message: "Not authenticated" });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select("-password");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({ user });
+  } catch (error) {
+    return res.status(401).json({ message: "Token expired or invalid" });
   }
 };
 
@@ -547,7 +396,7 @@ exports.getUserProfile = async (req, res) => {
         .json({ success: false, message: "Invalid User ID" });
     }
 
-    const user = await User.findById(id);
+    const user = await User.findById(id).select("-password");
     if (!user) {
       return res
         .status(404)

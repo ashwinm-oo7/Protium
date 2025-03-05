@@ -8,16 +8,27 @@ const errorHandler = require("./middleware/errorHandler");
 const stockRoutes = require("./routes/stockRoutes");
 const portfolioRoutes = require("./routes/portfolioRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
+const MoneyTransactionRoutes = require("./routes/MoneyTransactionRoutes");
 const userRoutes = require("./routes/userRoutes");
 const protectedRoutes = require("./routes/protectedRoutes");
 const yahooRoutes = require("./controllers/yahooFinance");
 const razorpayRoutes = require("./routes/RazorpayRoutes");
 const alertRoutes = require("./routes/alerts");
+const bankRoutes = require("./routes/BankManagementRoutes");
 const app = express();
 const PORT = process.env.BACKEND_PORT || 4000;
 
 // Middleware setup
-app.use(cors());
+// app.use(cors());
+const corsOptions = {
+  origin: [process.env.CLIENT_URL, "http://localhost:3000"], // ✅ Allow only frontend origin
+  credentials: true, // ✅ Allow cookies & authentication headers
+  allowedHeaders: ["Content-Type", "Authorization"], // ✅ Allow required headers
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // ✅ Specify allowed methods
+};
+
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 require("./utils/cronJobs"); // This ensures the cron job is triggered
@@ -63,6 +74,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/yahoo", yahooRoutes);
 app.use("/api/razorpay", razorpayRoutes);
 app.use("/api/alerts", alertRoutes);
+app.use("/api/money", MoneyTransactionRoutes);
+app.use("/api/bank", bankRoutes);
 app.use(errorHandler);
 
 // Start the server

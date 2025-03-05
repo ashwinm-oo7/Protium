@@ -1,14 +1,19 @@
 const express = require("express");
 const User = require("../models/User"); // Assuming you have a User model
+const {
+  sendEmailNotificationAlert,
+  sendEmailNotificationAddMoney,
+} = require("../services/emailServices");
+const MoneyTransaction = require("../models/MoneyTransaction");
 const router = express.Router();
 
 // Mock Add Money Route
 router.post("/add-money", async (req, res) => {
   try {
-    const { userId, amount } = req.body;
+    const { userId, amount, bankAccount } = req.body;
 
     // Validate input
-    if (!userId || !amount || amount <= 0) {
+    if (!userId || !amount || amount <= 0 || !bankAccount) {
       return res.status(400).json({ message: "Invalid input data." });
     }
 
@@ -20,6 +25,17 @@ router.post("/add-money", async (req, res) => {
 
     user.walletBalance = (user.walletBalance || 0) + amount;
     await user.save();
+    const transaction = new MoneyTransaction({
+      userId,
+      type: "Deposit",
+      amount,
+      paymentMethod: "Bank Transfer",
+      accountDetails: bankAccount,
+      status: "Completed",
+    });
+    await transaction.save();
+
+    await sendEmailNotificationAddMoney(user.email, amount, user.walletBalance);
 
     res.status(200).json({
       message: "Money added successfully!",
